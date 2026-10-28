@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLIMTECH VR | Refrigeração Industrial</title>
+<style>
+*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#101827;color:white;font-family:Arial,sans-serif}#painel{position:fixed;z-index:5;top:12px;left:12px;width:min(390px,calc(100vw - 24px));padding:14px;border-radius:14px;background:rgba(13,24,42,.94);border:1px solid #475569;max-height:calc(100vh - 75px);overflow-y:auto}h1{margin:0 0 5px;font-size:23px;color:#67e8f9}h2{font-size:17px;margin:10px 0 5px}p{font-size:14px;line-height:1.4;margin:7px 0}button{border:0;border-radius:8px;padding:9px;margin:3px 2px;background:#0891b2;color:white;font-weight:bold;cursor:pointer}button:focus{outline:2px solid white}.sec{background:#334155}#estado{color:#dbeafe;min-height:55px}#legenda{font-size:12px;color:#cbd5e1}#aviso{position:fixed;bottom:7px;left:8px;right:8px;z-index:4;text-align:center;font-size:11px;color:#dbeafe;pointer-events:none}.nota{font-size:11px;color:#a5b4fc}@media(max-width:600px){#painel{width:min(330px,calc(100vw - 24px));padding:10px}h1{font-size:19px}p{font-size:12px}button{padding:7px;font-size:11px}}
+</style></head><body>
+<div id="painel"><h1>GLIMTECH VR</h1><p><strong>Princípios Gerais da Refrigeração</strong></p><p>Selecione um componente para consultar a sua função. No modo VR, olhe fixamente para um componente.</p>
+<div><button onclick="mostrar('visao')">Visão geral</button><button onclick="mostrar('compressor')">1. Compressor</button><button onclick="mostrar('condensador')">2. Condensador</button><button onclick="mostrar('filtro')">3. Filtro secador</button><button onclick="mostrar('expansao')">4. Expansão</button><button onclick="mostrar('evaporador')">5. Evaporador</button></div>
+<div><button onclick="alternarInterior()">Mostrar/ocultar interior</button><button class="sec" onclick="alternarFluxo()">Pausar/retomar fluxo</button><button class="sec" onclick="mostrar('visao');interiorAtivo=false;atualizarInterior()">Voltar ao circuito</button></div>
+<h2 id="titulo">Ciclo de refrigeração</h2><p id="estado">O refrigerante circula em circuito fechado: compressão, condensação, filtragem/secagem, expansão e evaporação.</p><p id="legenda">Vermelho/laranja: linha de alta pressão. Azul: linha de baixa pressão. Cores ilustrativas.</p><p id="status">A preparar experiência 3D...</p><p class="nota">Modelos internos esquemáticos para aprendizagem; não representam um fabricante específico.</p></div>
+<div id="aviso">GLIMTECH VR • Modelo didático ilustrativo. Não representa medições de equipamento real.</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js';
+import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/webxr/VRButton.js';
+const status=document.getElementById('status');
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x101827);scene.fog=new THREE.Fog(0x101827,18,38);
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,100);camera.position.set(0,6,14);
+scene.add(camera); 
+
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.xr.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff,0x34415c,2.2));const luz=new THREE.DirectionalLight(0xffffff,2.5);luz.position.set(5,10,7);scene.add(luz);
+const mat=(c,m=0.1)=>new THREE.MeshStandardMaterial({color:c,metalness:m,roughness:.48});const metal=mat(0x8c9db3,.65),escuro=mat(0x263449,.2),vermelho=mat(0xff543d),laranja=mat(0xffa344),azul=mat(0x268bff),verde=mat(0x39d9a0),amarelo=mat(0xfacc15),branco=mat(0xe2e8f0);
+const componentes={},selecionaveis=[],caminhos=[],particulas=[];let fluxoAtivo=true,interiorAtivo=false,selecionado='visao';
+function grupo(nome,pos){const g=new THREE.Group();g.name=nome;g.position.set(...pos);scene.add(g);componentes[nome]={grupo:g,externos:[],internos:[]};return g}
+function adicionar(g,geo,material,pos,interno=false){const o=new THREE.Mesh(geo,material);o.position.set(...pos);o.userData.componente=g.name;g.add(o);(interno?componentes[g.name].internos:componentes[g.name].externos).push(o);selecionaveis.push(o);return o}
+function caixa(g,dims,material,pos,interno=false){return adicionar(g,new THREE.BoxGeometry(...dims),material,pos,interno)}
+function tubo(g,a,b,raio,material,interno=false){const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),dir=new THREE.Vector3().subVectors(B,A);const o=adicionar(g,new THREE.CylinderGeometry(raio,raio,dir.length(),12),material,[(A.x+B.x)/2,(A.y+B.y)/2,(A.z+B.z)/2],interno);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir.normalize());return o}
+function texto(t,pos,cor='#fff'){const c=document.createElement('canvas');c.width=512;c.height=90;const x=c.getContext('2d');x.fillStyle='#111c30';x.fillRect(0,0,512,90);x.fillStyle=cor;x.font='bold 30px Arial';x.fillText(t,12,56);const tex=new THREE.CanvasTexture(c);const p=new THREE.Mesh(new THREE.PlaneGeometry(3.1,.55),new THREE.MeshBasicMaterial({map:tex,side:THREE.DoubleSide}));p.position.set(...pos);scene.add(p);return p}
+const informacoes={visao:{titulo:'Ciclo de refrigeração',texto:'Sequência didática: compressor → condensador → filtro secador → dispositivo de expansão → evaporador → compressor. O evaporador absorve calor e o condensador rejeita calor.'},compressor:{titulo:'1. Compressor',texto:'Aspira vapor de baixa pressão do evaporador e eleva sua pressão e temperatura. No corte esquemático, o pistão/cilindro representa um exemplo de compressor alternativo; há outros tipos de compressor.'},condensador:{titulo:'2. Condensador',texto:'Rejeita calor para o ambiente. O refrigerante entra normalmente como vapor de alta pressão e sai predominantemente líquido quando as condições de operação permitem.'},filtro:{titulo:'3. Filtro secador',texto:'Instalado normalmente na linha de líquido, após o condensador e antes do dispositivo de expansão. O dessecante reduz a umidade e o filtro retém partículas contaminantes.'},expansao:{titulo:'4. Dispositivo de expansão',texto:'Provoca queda de pressão e regula a alimentação do evaporador. Parte do líquido pode evaporar instantaneamente, formando mistura de líquido e vapor.'},evaporador:{titulo:'5. Evaporador',texto:'Absorve calor do espaço refrigerado. O refrigerante evapora ao receber energia e retorna ao compressor predominantemente como vapor.'}};
+const piso=new THREE.Mesh(new THREE.BoxGeometry(20,.2,15),escuro);piso.position.set(0,-1.25,0);scene.add(piso);
+let g=grupo('compressor',[-4,0,0]);caixa(g,[2,1.8,1.7],metal,[0,0,0]);caixa(g,[1.15,.7,1.05],escuro,[0,.15,0],true);tubo(g,[-.35,-.35,0],[.35,-.35,0],.12,amarelo,true);caixa(g,[.42,.22,.4],amarelo,[0,-.05,0],true);tubo(g,[-.75,.85,0],[-.75,1.2,0],.12,vermelho);tubo(g,[.7,.85,0],[.7,1.2,0],.12,laranja);
+g=grupo('condensador',[0,1,-3]);caixa(g,[3.4,2.0,.55],vermelho,[0,0,0]);for(let i=0;i<7;i++){tubo(g,[-1.35+i*.45,-.7,.38],[-1.35+i*.45,.7,.38],.055,metal,true)}for(let j=0;j<3;j++)tubo(g,[-1.35,.65-j*.65,.38],[1.35,.65-j*.65,.38],.055,laranja,true);
+g=grupo('filtro',[2.45,.2,-1.7]);const can=adicionar(g,new THREE.CylinderGeometry(.34,.34,1.25,24),metal,[0,0,0]);can.rotation.z=Math.PI/2;const core=adicionar(g,new THREE.CylinderGeometry(.22,.22,.85,20),amarelo,[0,0,0],true);core.rotation.z=Math.PI/2;for(let i=0;i<9;i++){const bead=adicionar(g,new THREE.SphereGeometry(.07,8,8),amarelo,[(i-4)*.15,Math.sin(i*2)*.12,.12],true)}tubo(g,[-.9,0,0],[-.4,0,0],.09,laranja);tubo(g,[.4,0,0],[.9,0,0],.09,laranja);
+g=grupo('expansao',[4,0,0]);caixa(g,[1.15,.8,1],verde,[0,0,0]);tubo(g,[-.8,0,0],[-.25,0,0],.1,laranja);tubo(g,[.25,0,0],[.8,0,0],.1,azul);caixa(g,[.25,.5,.3],amarelo,[0,0,0],true);
+g=grupo('evaporador',[0,0,3]);caixa(g,[3.4,1.8,.55],azul,[0,0,0]);for(let i=0;i<7;i++)tubo(g,[-1.35+i*.45,-.65,.38],[-1.35+i*.45,.65,.38],.055,metal,true);for(let j=0;j<3;j++)tubo(g,[-1.35,.6-j*.6,.38],[1.35,.6-j*.6,.38],.055,azul,true);
+texto('COMPRESSOR',[-4,1.55,0]);texto('CONDENSADOR',[0,2.25,-3],'#ffb5a6');texto('FILTRO SECADOR',[2.45,1.0,-1.7],'#fde68a');texto('EXPANSAO',[4,1,0],'#a7f3d0');texto('EVAPORADOR',[0,1.1,3],'#a9d8ff');
+function caminho(points,color){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve,80,.075,8,false),mat(color)));caminhos.push(curve)}
+caminho([[-4,0,1],[-4,1,-1],[-3,1,-3],[0,1,-3]],0xff543d);caminho([[1.7,1,-3],[2,1,-2.4],[2.45,.2,-1.7],[3.2,.4,-.8],[4,0,0]],0xffa344);caminho([[4,-.2,0],[3,-.7,2],[1.6,-.4,3],[0,-.4,3]],0x268bff);caminho([[-1.7,-.1,3],[-3,-.2,2],[-4,-.2,1]],0x268bff);
+for(let i=0;i<36;i++){const o=new THREE.Mesh(new THREE.SphereGeometry(.11,12,12),mat(i<18?0xffb454:0x55c7ff));scene.add(o);particulas.push({objeto:o,t:i/36,caminho:i%4})}
+function atualizarInterior(){Object.entries(componentes).forEach(([n,c])=>{c.internos.forEach(o=>o.visible=interiorAtivo&&selecionado===n);c.externos.forEach(o=>o.visible=!(interiorAtivo&&selecionado===n))});}
+window.alternarInterior=()=>{if(selecionado==='visao'){document.getElementById('status').textContent='Selecione primeiro um dos cinco componentes.';return}interiorAtivo=!interiorAtivo;atualizarInterior();document.getElementById('status').textContent=interiorAtivo?'Corte interno esquemático ativado.':'Vista externa ativada.'};
+window.alternarFluxo=()=>{fluxoAtivo=!fluxoAtivo;status.textContent=fluxoAtivo?'Fluxo animado ativo.':'Fluxo animado pausado.'};
+const vistas={visao:[0,6,14,0,0,0],compressor:[-4,3,5,-4,0,0],condensador:[0,4,3,0,1,-3],filtro:[2.5,2.5,4,2.45,.2,-1.7],expansao:[4,3,5,4,0,0],evaporador:[0,3,7,0,0,3]};
+window.mostrar=(nome)=>{selecionado=informacoes[nome]?nome:'visao';const info=informacoes[selecionado];document.getElementById('titulo').textContent=info.titulo;document.getElementById('estado').textContent=info.texto;const v=vistas[selecionado];camera.position.set(v[0],v[1],v[2]);camera.lookAt(v[3],v[4],v[5]);interiorAtivo=false;atualizarInterior();status.textContent=selecionado==='visao'?'Circuito completo selecionado.':'Componente selecionado: '+info.titulo+'. Use Mostrar/ocultar interior.'};
+
+// --- ALTERAÇÕES PARA ZEISS VR ONE PLUS (GAZE TRACKING) ---
+const reticle=new THREE.Mesh(new THREE.RingGeometry(.015,.025,32),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.8}));
+reticle.position.set(0,0,-1.5);
+camera.add(reticle); // Retículo fixo no centro da visão
+const raycaster=new THREE.Raycaster();
+let alvoGaze=null,tempoGaze=0;const TEMPO_ATIVACAO=1.5; // Segundos necessários a olhar para o objeto
+
+const vr=VRButton.createButton(renderer);vr.style.position='fixed';vr.style.left='50%';vr.style.bottom='35px';vr.style.transform='translateX(-50%)';vr.style.zIndex='10';document.body.appendChild(vr);status.textContent='Pronto. No modo VR, olhe para um componente para o selecionar.';
+const clock=new THREE.Clock();
+
+renderer.setAnimationLoop(()=>{
+  const d=Math.min(clock.getDelta(),.05);
+  if(fluxoAtivo)particulas.forEach(p=>{p.t=(p.t+d*.12)%1;p.objeto.position.copy(caminhos[p.caminho].getPoint(p.t))});
+  
+  // Lógica de Gaze Tracking para telemóveis sem comando
+  if(renderer.xr.isPresenting){
+    const dir=new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    raycaster.set(camera.getWorldPosition(new THREE.Vector3()),dir);
+    
+    // Filtra objetos visíveis em cena
+    const hits=raycaster.intersectObjects(selecionaveis.filter(o=>o.visible),false);
+    
+    if(hits.length){
+      const obj=hits[0].object;
+      if(alvoGaze===obj){
+        tempoGaze+=d;
+        // Animação de carregamento visual (encolhe o retículo)
+        reticle.scale.setScalar(Math.max(0.1, 1-(tempoGaze/TEMPO_ATIVACAO)));
+        
+        if(tempoGaze>=TEMPO_ATIVACAO){
+          window.mostrar(obj.userData.componente); // Ativa o componente
+          tempoGaze=0; alvoGaze=null;
+        }
+      }else{
+        alvoGaze=obj; tempoGaze=0; 
+        reticle.scale.setScalar(1); 
+        reticle.material.color.setHex(0x39d9a0); // Fica verde ao detetar alvo
+      }
+    }else{
+      alvoGaze=null; tempoGaze=0; 
+      reticle.scale.setScalar(1); 
+      reticle.material.color.setHex(0xffffff); // Branco quando não há alvo
+    }
+  }
+  
+  renderer.render(scene,camera);
+});
+
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script></body></html>
