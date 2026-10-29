@@ -16,8 +16,13 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.m
 import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/webxr/VRButton.js';
 const status=document.getElementById('status');
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x101827);scene.fog=new THREE.Fog(0x101827,18,38);
-const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,100);camera.position.set(0,6,14);
-scene.add(camera); 
+
+// CORREÇÃO DA CÂMARA PARA VR (Criação do Grupo)
+const camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,100);
+const cameraGroup=new THREE.Group();
+cameraGroup.position.set(0,6,14);
+scene.add(cameraGroup);
+cameraGroup.add(camera);
 
 const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.xr.enabled=true;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xffffff,0x34415c,2.2));const luz=new THREE.DirectionalLight(0xffffff,2.5);luz.position.set(5,10,7);scene.add(luz);
@@ -42,15 +47,19 @@ for(let i=0;i<36;i++){const o=new THREE.Mesh(new THREE.SphereGeometry(.11,12,12)
 function atualizarInterior(){Object.entries(componentes).forEach(([n,c])=>{c.internos.forEach(o=>o.visible=interiorAtivo&&selecionado===n);c.externos.forEach(o=>o.visible=!(interiorAtivo&&selecionado===n))});}
 window.alternarInterior=()=>{if(selecionado==='visao'){document.getElementById('status').textContent='Selecione primeiro um dos cinco componentes.';return}interiorAtivo=!interiorAtivo;atualizarInterior();document.getElementById('status').textContent=interiorAtivo?'Corte interno esquemático ativado.':'Vista externa ativada.'};
 window.alternarFluxo=()=>{fluxoAtivo=!fluxoAtivo;status.textContent=fluxoAtivo?'Fluxo animado ativo.':'Fluxo animado pausado.'};
-const vistas={visao:[0,6,14,0,0,0],compressor:[-4,3,5,-4,0,0],condensador:[0,4,3,0,1,-3],filtro:[2.5,2.5,4,2.45,.2,-1.7],expansao:[4,3,5,4,0,0],evaporador:[0,3,7,0,0,3]};
-window.mostrar=(nome)=>{selecionado=informacoes[nome]?nome:'visao';const info=informacoes[selecionado];document.getElementById('titulo').textContent=info.titulo;document.getElementById('estado').textContent=info.texto;const v=vistas[selecionado];camera.position.set(v[0],v[1],v[2]);camera.lookAt(v[3],v[4],v[5]);interiorAtivo=false;atualizarInterior();status.textContent=selecionado==='visao'?'Circuito completo selecionado.':'Componente selecionado: '+info.titulo+'. Use Mostrar/ocultar interior.'};
 
-// --- ALTERAÇÕES PARA ZEISS VR ONE PLUS (GAZE TRACKING) ---
+// Atualizado para mover o cameraGroup em vez da camera solta
+const vistas={visao:[0,4,12,0,0,0],compressor:[-4,3,5,-4,0,0],condensador:[0,4,3,0,1,-3],filtro:[2.5,2.5,4,2.45,.2,-1.7],expansao:[4,3,5,4,0,0],evaporador:[0,3,7,0,0,3]};
+window.mostrar=(nome)=>{selecionado=informacoes[nome]?nome:'visao';const info=informacoes[selecionado];document.getElementById('titulo').textContent=info.titulo;document.getElementById('estado').textContent=info.texto;const v=vistas[selecionado];
+cameraGroup.position.set(v[0],v[1],v[2]);
+cameraGroup.lookAt(v[3],v[4],v[5]);
+interiorAtivo=false;atualizarInterior();status.textContent=selecionado==='visao'?'Circuito completo selecionado.':'Componente selecionado: '+info.titulo+'. Use Mostrar/ocultar interior.'};
+
 const reticle=new THREE.Mesh(new THREE.RingGeometry(.015,.025,32),new THREE.MeshBasicMaterial({color:0xffffff,side:THREE.DoubleSide,transparent:true,opacity:0.8}));
 reticle.position.set(0,0,-1.5);
-camera.add(reticle); // Retículo fixo no centro da visão
+camera.add(reticle); 
 const raycaster=new THREE.Raycaster();
-let alvoGaze=null,tempoGaze=0;const TEMPO_ATIVACAO=1.5; // Segundos necessários a olhar para o objeto
+let alvoGaze=null,tempoGaze=0;const TEMPO_ATIVACAO=1.5; 
 
 const vr=VRButton.createButton(renderer);vr.style.position='fixed';vr.style.left='50%';vr.style.bottom='35px';vr.style.transform='translateX(-50%)';vr.style.zIndex='10';document.body.appendChild(vr);status.textContent='Pronto. No modo VR, olhe para um componente para o selecionar.';
 const clock=new THREE.Clock();
@@ -59,35 +68,32 @@ renderer.setAnimationLoop(()=>{
   const d=Math.min(clock.getDelta(),.05);
   if(fluxoAtivo)particulas.forEach(p=>{p.t=(p.t+d*.12)%1;p.objeto.position.copy(caminhos[p.caminho].getPoint(p.t))});
   
-  // Lógica de Gaze Tracking para telemóveis sem comando
   if(renderer.xr.isPresenting){
     const dir=new THREE.Vector3();
     camera.getWorldDirection(dir);
     raycaster.set(camera.getWorldPosition(new THREE.Vector3()),dir);
     
-    // Filtra objetos visíveis em cena
     const hits=raycaster.intersectObjects(selecionaveis.filter(o=>o.visible),false);
     
     if(hits.length){
       const obj=hits[0].object;
       if(alvoGaze===obj){
         tempoGaze+=d;
-        // Animação de carregamento visual (encolhe o retículo)
         reticle.scale.setScalar(Math.max(0.1, 1-(tempoGaze/TEMPO_ATIVACAO)));
         
         if(tempoGaze>=TEMPO_ATIVACAO){
-          window.mostrar(obj.userData.componente); // Ativa o componente
+          window.mostrar(obj.userData.componente); 
           tempoGaze=0; alvoGaze=null;
         }
       }else{
         alvoGaze=obj; tempoGaze=0; 
         reticle.scale.setScalar(1); 
-        reticle.material.color.setHex(0x39d9a0); // Fica verde ao detetar alvo
+        reticle.material.color.setHex(0x39d9a0); 
       }
     }else{
       alvoGaze=null; tempoGaze=0; 
       reticle.scale.setScalar(1); 
-      reticle.material.color.setHex(0xffffff); // Branco quando não há alvo
+      reticle.material.color.setHex(0xffffff); 
     }
   }
   
